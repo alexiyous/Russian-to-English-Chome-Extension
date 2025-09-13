@@ -23,18 +23,6 @@ A Chrome extension that automatically translates webpages from Russian to Englis
 5. **Select the folder** containing this extension (the folder with `manifest.json`)
 6. **Create Icons** (see `icons/README.md` for instructions on creating the required PNG icon files)
 
-### Option 2: Create Icons First (Recommended)
-
-Before loading the extension, create the required icon files:
-
-1. **Navigate to the `icons` folder**
-2. **Follow instructions in `icons/README.md`** to create:
-   - `icon16.png` (16x16 pixels)
-   - `icon32.png` (32x32 pixels)
-   - `icon48.png` (48x48 pixels)
-   - `icon128.png` (128x128 pixels)
-3. **Then follow Option 1 above**
-
 ## Usage
 
 ### Automatic Translation
@@ -63,25 +51,6 @@ Before loading the extension, create the required icon files:
 5. **UI Cleanup**: Hides Google Translate's default interface elements
 6. **Persistence**: Maintains translation state across page refreshes and navigation
 
-## File Structure
-
-```
-/
-├── manifest.json          # Extension configuration and permissions
-├── content.js            # Main translation logic (injected into pages)
-├── background.js         # Service worker for extension lifecycle
-├── popup.html           # Extension popup interface
-├── popup.js             # Popup functionality and controls
-├── icons/               # Extension icons folder
-│   ├── icon.svg         # Source SVG for creating PNG icons
-│   ├── icon16.png       # 16x16 icon (create manually)
-│   ├── icon32.png       # 32x32 icon (create manually)
-│   ├── icon48.png       # 48x48 icon (create manually)
-│   ├── icon128.png      # 128x128 icon (create manually)
-│   └── README.md        # Icon creation instructions
-└── README.md            # This file
-```
-
 ## Permissions Explained
 
 The extension requires these permissions:
@@ -99,12 +68,6 @@ The extension requires these permissions:
 2. **Verify the page contains Russian text** (look for the Russian flag indicator)
 3. **Try manually retranslating** using the popup button
 4. **Refresh the page** if translation seems stuck
-
-### Extension Not Appearing
-1. **Ensure all files are present** (especially `manifest.json`)
-2. **Check that icons are created** (see `icons/README.md`)
-3. **Reload the extension** in `chrome://extensions/`
-4. **Check Chrome's extension error console** for any errors
 
 ### Google Translate Issues
 1. **Check internet connection** (Google Translate requires internet)
