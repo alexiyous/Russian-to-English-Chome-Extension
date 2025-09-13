@@ -1,0 +1,32 @@
+<!-- Create PNG icons from this SVG -->
+<!-- You can use an online SVG to PNG converter or image editing software -->
+<!-- to create icon16.png, icon32.png, icon48.png, and icon128.png -->
+
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1a73e8" stroke="#1557b0" stroke-width="2"/>
+  
+  <!-- Translation arrows -->
+  <g fill="white">
+    <!-- Arrow pointing right (Russian to English) -->
+    <path d="M30 45 L55 45 L50 40 L50 43 L75 43 L75 47 L50 47 L50 50 Z"/>
+    
+    <!-- Arrow pointing left (feedback loop) -->
+    <path d="M98 83 L73 83 L78 88 L78 85 L53 85 L53 81 L78 81 L78 78 Z"/>
+  </g>
+  
+  <!-- Text symbols -->
+  <g fill="white" font-family="Arial, sans-serif" font-weight="bold">
+    <!-- Russian "Р" -->
+    <text x="25" y="35" font-size="16" text-anchor="middle">Р</text>
+    
+    <!-- English "E" -->
+    <text x="103" y="75" font-size="16" text-anchor="middle">E</text>
+  </g>
+  
+  <!-- Translation symbol in center -->
+  <g fill="white">
+    <circle cx="64" cy="64" r="18" fill="none" stroke="white" stroke-width="3"/>
+    <text x="64" y="70" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" font-weight="bold">↔</text>
+  </g>
+</svg>

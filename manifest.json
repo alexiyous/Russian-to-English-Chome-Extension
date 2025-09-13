@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Auto Russian-English Translator",
+  "version": "1.0",
+  "description": "Automatically translates webpages from Russian to English using Google Translate",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://translate.googleapis.com/*",
+    "https://translate.google.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Auto Russian-English Translator",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
