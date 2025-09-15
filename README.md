@@ -1,16 +1,18 @@
 # Auto Russian-English Translator Chrome Extension
 
-A Chrome extension that automatically translates webpages from Russian to English using Google Translate. The translation persists even when pages are refreshed or navigated.
+A Chrome extension that automatically translates webpages from Russian to English using Google Translate. The extension remembers your on/off preference across browser sessions.
 
 ## Features
 
-- ✅ **Automatic Detection**: Automatically detects Russian text on webpages
-- ✅ **Instant Translation**: Translates entire pages from Russian to English
-- ✅ **Persistent Translation**: Works even after page refresh or navigation
-- ✅ **Toggle Control**: Easy on/off toggle via popup interface
-- ✅ **Manual Retranslate**: Option to manually retranslate current page
-- ✅ **Clean Interface**: Minimal, user-friendly popup design
-- ✅ **Google Translate Powered**: Uses reliable Google Translate service
+- ✅ **Smart Russian Detection**: Uses Unicode pattern matching to detect Cyrillic text
+- ✅ **Direct API Translation**: Uses Google Translate API for fast, accurate translations
+- ✅ **Translation Caching**: Avoids re-translating identical text for better performance
+- ✅ **Dynamic Content Support**: Automatically translates new content loaded via JavaScript
+- ✅ **Viewport-Based Processing**: Smart batching and viewport-aware translation
+- ✅ **Persistent Settings**: Extension on/off state persists across browser sessions
+- ✅ **Visual Indicators**: Shows translation progress and Russian text detection
+- ✅ **Context Menu Integration**: Right-click option to translate pages
+- ✅ **Background Processing**: Service worker handles settings and context menus
 
 ## Installation
 
@@ -43,22 +45,28 @@ A Chrome extension that automatically translates webpages from Russian to Englis
 
 ## How It Works
 
-1. **Content Script Injection**: The extension injects a content script into all webpages
-2. **Russian Text Detection**: Uses Unicode range detection to identify Cyrillic/Russian text
-3. **Google Translate Integration**: Loads Google Translate widget invisibly
-4. **Automatic Translation**: Sets language to English and triggers translation
-5. **UI Cleanup**: Hides Google Translate's default interface elements
-6. **Persistence**: Maintains translation state across page refreshes and navigation
+1. **Content Script Injection**: Runs on all webpages via content script
+2. **Text Node Analysis**: Scans DOM text nodes using TreeWalker API
+3. **Russian Pattern Matching**: Uses Unicode range [\u0400-\u04FF] to detect Cyrillic text
+4. **Direct API Calls**: Makes requests to Google Translate API (translate.googleapis.com)
+5. **Batch Processing**: Translates text in batches of 10 nodes with delays to respect API limits
+6. **DOM Manipulation**: Replaces original text while preserving original in data attributes
+7. **Mutation Observer**: Monitors page changes to translate dynamically loaded content
+8. **Viewport Optimization**: Prioritizes translation of visible content with scroll-based checking
+9. **Translation Cache**: Stores translations in memory to avoid duplicate API calls
+10. **State Persistence**: Uses Chrome storage API to remember on/off preference across sessions
 
 ## Permissions Explained
 
 The extension requires these permissions:
 
-- **`storage`**: Save user preferences (enable/disable translation)
-- **`activeTab`**: Access the currently active tab for translation
-- **`scripting`**: Inject translation scripts into webpages
-- **`host_permissions`**: Access to all websites for translation
-- **`translate.googleapis.com`**: Access to Google Translate service
+- **`storage`**: Save translation on/off preference across browser sessions
+- **`activeTab`**: Access current tab for translation and Russian text detection
+- **`scripting`**: Inject content scripts and execute translation functions
+- **`notifications`**: Show translation status notifications (if needed)
+- **`contextMenus`**: Add right-click "Translate page" option
+- **`host_permissions`**: Access all HTTP/HTTPS sites for translation
+- **`translate.googleapis.com`**: Direct API access to Google Translate service
 
 ## Troubleshooting
 
@@ -98,9 +106,13 @@ pageLanguage: 'ru',  // Change to your source language code
 ## Technical Details
 
 - **Manifest Version**: 3 (latest Chrome extension standard)
-- **Translation Service**: Google Translate Web Widget
-- **Detection Method**: Unicode range pattern matching
-- **Persistence**: Chrome storage API for settings
+- **Translation Service**: Google Translate REST API (translate.googleapis.com)
+- **Detection Method**: Unicode range [\u0400-\u04FF] for Cyrillic script
+- **DOM Processing**: TreeWalker API for efficient text node traversal
+- **Dynamic Content**: MutationObserver for real-time content monitoring
+- **Performance**: Translation caching, batched API calls, viewport prioritization
+- **Data Persistence**: Chrome storage.sync API for cross-device settings
+- **Service Worker**: Background script for context menus and message handling
 - **Compatibility**: Chrome 88+ (Manifest V3 requirement)
 
 ## Privacy
