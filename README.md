@@ -21,7 +21,6 @@ A Chrome extension that automatically translates webpages from Russian to Englis
 3. **Enable Developer mode** by toggling the switch in the top-right corner
 4. **Click "Load unpacked"** button
 5. **Select the folder** containing this extension (the folder with `manifest.json`)
-6. **Create Icons** (see `icons/README.md` for instructions on creating the required PNG icon files)
 
 ## Usage
 
