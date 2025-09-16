@@ -38,12 +38,8 @@
         const cleanText = text.trim();
         if (!cleanText) return '';
         
-        // For very short text (likely single words/characters), 
-        // we'll try an alternative approach if primary translation fails
-        const isShortText = cleanText.length <= 5;
-        
         try {
-            // First attempt with standard API
+            // Single API call for better performance - no fallback for short text
             const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(cleanText)}`;
             const response = await fetch(url);
             const result = await response.json();
@@ -52,34 +48,7 @@
                 return result[0][0][0];
             }
             
-            // If initial attempt failed and it's a short text, try fallback method
-            if (isShortText) {
-                // Add some context to help translation API (especially for single words)
-                const contextText = `This Russian word: ${cleanText}`;
-                
-                // Try with auto-detection instead of explicit Russian source
-                const fallbackUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(contextText)}`;
-                
-                try {
-                    const fallbackResponse = await fetch(fallbackUrl);
-                    const fallbackResult = await fallbackResponse.json();
-                    
-                    if (fallbackResult && fallbackResult[0] && fallbackResult[0][0] && fallbackResult[0][0][0]) {
-                        // Extract the translation, removing the added context
-                        const fullTranslation = fallbackResult[0][0][0];
-                        // Look for patterns like "This Russian word: [translation]"
-                        const match = fullTranslation.match(/(?:This Russian word:\s*)(.*)/i);
-                        if (match && match[1]) {
-                            return match[1].trim();
-                        }
-                        return fullTranslation; // Return full if we can't extract
-                    }
-                } catch (fallbackError) {
-                    console.log('Fallback translation error:', fallbackError);
-                }
-            }
-            
-            return cleanText; // Return original if all translation attempts fail
+            return cleanText; // Return original if translation fails
         } catch (error) {
             console.log('Translation error:', error);
             return cleanText;
@@ -241,18 +210,22 @@
         
         console.log(`Found ${paragraphElements.length} paragraph elements and ${textNodes.length} individual text nodes to translate`);
         
-        // First translate paragraph elements as complete units for better context
+        // Process paragraph elements in parallel batches for better performance
         console.log(`Translating paragraph elements...`);
-        for (let i = 0; i < paragraphElements.length; i++) {
-            const element = paragraphElements[i];
-            await translateElementContent(element);
+        const paragraphBatchSize = 5; // Process 5 paragraphs at once
+        
+        for (let i = 0; i < paragraphElements.length; i += paragraphBatchSize) {
+            const batch = paragraphElements.slice(i, i + paragraphBatchSize);
             
-            // Small delay between paragraph translations
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Process batch in parallel
+            await Promise.all(batch.map(element => translateElementContent(element)));
             
-            // Update progress every 5 paragraphs
-            if (i % 5 === 0 || i === paragraphElements.length - 1) {
-                updateTranslationIndicator(`Translating... (${i+1}/${paragraphElements.length} paragraphs)`);
+            // Update progress
+            updateTranslationIndicator(`Translating... (${Math.min(i + paragraphBatchSize, paragraphElements.length)}/${paragraphElements.length} paragraphs)`);
+            
+            // Short delay only between batches, not individual paragraphs
+            if (i + paragraphBatchSize < paragraphElements.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
         
@@ -273,32 +246,12 @@
             }
         });
         
-        // Process regular nodes first (more likely to succeed)
-        const batchSize = 10;
-        for (let i = 0; i < regularNodes.length; i += batchSize) {
-            const batch = regularNodes.slice(i, i + batchSize);
-            const translations = await Promise.all(
-                batch.map(node => translateText(node.textContent.trim()))
-            );
-            
-            batch.forEach((node, index) => {
-                const originalText = node.textContent.trim();
-                const translatedText = translations[index];
-                if (translatedText && translatedText !== originalText) {
-                    // Mark the element as translated and update text directly
-                    translatedElements.add(node.parentElement);
-                    node.textContent = translatedText;
-                }
-            });
-            
-            // Small delay between batches to be respectful to the API
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Process all nodes together with larger batches for better performance
+        const allNodes = [...regularNodes, ...smallNodes];
+        const batchSize = 25; // Increased batch size
         
-        // Process smaller nodes with a smaller batch size (more prone to failures)
-        const smallBatchSize = 5;
-        for (let i = 0; i < smallNodes.length; i += smallBatchSize) {
-            const batch = smallNodes.slice(i, i + smallBatchSize);
+        for (let i = 0; i < allNodes.length; i += batchSize) {
+            const batch = allNodes.slice(i, i + batchSize);
             const translations = await Promise.all(
                 batch.map(node => translateText(node.textContent.trim()))
             );
@@ -313,8 +266,10 @@
                 }
             });
             
-            // Slightly longer delay for small batches to allow API to recover
-            await new Promise(resolve => setTimeout(resolve, 150));
+            // Reduced delay for better performance
+            if (i + batchSize < allNodes.length) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
         }
         
         // Verify and fix any partial translations
@@ -535,18 +490,15 @@
             return bLength - aLength; // Larger texts first
         });
         
-        const batchSize = 5;
+        const batchSize = 15; // Increased batch size
         for (let i = 0; i < sortedNodes.length; i += batchSize) {
             const batch = sortedNodes.slice(i, i + batchSize);
             await Promise.all(batch.map(node => translateSingleNode(node)));
             
-            // Adaptive delay based on text size
-            const avgTextLength = batch.reduce((sum, node) => 
-                sum + (node.textContent || '').trim().length, 0) / batch.length;
-            
-            // More delay for smaller text (more prone to translation issues)
-            const delay = Math.max(50, Math.min(200, 100 - avgTextLength * 2));
-            await new Promise(resolve => setTimeout(resolve, delay));
+            // Minimal delay for better performance
+            if (i + batchSize < sortedNodes.length) {
+                await new Promise(resolve => setTimeout(resolve, 30));
+            }
         }
     }
 
@@ -582,8 +534,8 @@
             console.log(`Found ${incompleteElements.length} elements with incomplete translations. Attempting fix...`);
             updateTranslationIndicator(`Fixing ${incompleteElements.length} incomplete translations...`);
             
-            // Try to fix these elements
-            const batchSize = 3;
+            // Try to fix these elements with larger batches
+            const batchSize = 8; // Increased batch size
             for (let i = 0; i < incompleteElements.length; i += batchSize) {
                 const batch = incompleteElements.slice(i, i + batchSize);
                 
@@ -612,21 +564,28 @@
                             textNodes.push(textNode);
                         }
                         
-                        // Translate each Russian text node individually
-                        for (const node of textNodes) {
+                        // Translate all nodes in parallel for this element
+                        const translations = await Promise.all(
+                            textNodes.map(node => translateText(node.textContent.trim()))
+                        );
+                        
+                        // Apply translations
+                        textNodes.forEach((node, index) => {
                             const originalText = node.textContent.trim();
-                            const translatedText = await translateText(originalText);
+                            const translatedText = translations[index];
                             if (translatedText && translatedText !== originalText) {
                                 node.textContent = node.textContent.replace(originalText, translatedText);
                             }
-                        }
+                        });
                     } catch (error) {
                         console.log("Error fixing incomplete translation:", error);
                     }
                 }));
                 
-                // Short delay between batches
-                await new Promise(resolve => setTimeout(resolve, 200));
+                // Reduced delay between batches
+                if (i + batchSize < incompleteElements.length) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
             }
             
             console.log("Incomplete translations fix attempt completed");
