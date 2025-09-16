@@ -40,26 +40,185 @@
         }
     }
 
-    // Direct text translation using Google Translate API with fallback mechanisms
+    // Direct text translation using Google Translate API with text chunking and error handling
     async function translateText(text, sourceLang = 'ru', targetLang = 'en') {
         const cleanText = text.trim();
         if (!cleanText) return '';
         
+        // Maximum URL length limit for Google Translate API (increased for better performance)
+        const MAX_CHUNK_SIZE = 4000; // Increased chunk size
+        
+        // If text is small enough, translate directly
+        if (cleanText.length <= MAX_CHUNK_SIZE) {
+            return await translateChunk(cleanText, sourceLang, targetLang);
+        }
+        
+        // For large text, split into chunks and process in parallel
+        const chunks = splitTextIntoChunks(cleanText, MAX_CHUNK_SIZE);
+        
+        // Process chunks in parallel with some concurrency control
+        const maxConcurrent = Math.min(3, chunks.length); // Limit concurrent requests
+        const translations = new Array(chunks.length);
+        
+        for (let i = 0; i < chunks.length; i += maxConcurrent) {
+            const batch = chunks.slice(i, i + maxConcurrent);
+            const batchPromises = batch.map((chunk, index) => 
+                translateChunk(chunk, sourceLang, targetLang).then(result => ({
+                    index: i + index,
+                    translation: result
+                }))
+            );
+            
+            const batchResults = await Promise.all(batchPromises);
+            batchResults.forEach(({ index, translation }) => {
+                translations[index] = translation;
+            });
+            
+            // Only add delay between batches, not individual chunks
+            if (i + maxConcurrent < chunks.length) {
+                await new Promise(resolve => setTimeout(resolve, 50)); // Reduced delay
+            }
+        }
+        
+        return translations.join(' ');
+    }
+    
+    // Helper function to translate a single chunk with safe error handling
+    async function translateChunk(text, sourceLang = 'ru', targetLang = 'en', isRetry = false) {
+        const cleanText = text.trim();
+        if (!cleanText) return '';
+        
+        // Prevent very long URLs that cause 400 errors
+        const encodedText = encodeURIComponent(cleanText);
+        if (encodedText.length > 8000) { // URL length limit
+            return cleanText;
+        }
+        
         try {
-            // Single API call for better performance - no fallback for short text
-            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(cleanText)}`;
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodedText}`;
             const response = await fetch(url);
+            
+            // Handle HTTP errors
+            if (!response.ok) {
+                if (response.status === 400) {
+                    
+                    // Only try splitting once to avoid recursion
+                    if (!isRetry && cleanText.length > 500) {
+                        // Split into smaller pieces and translate separately
+                        const midPoint = Math.floor(cleanText.length / 2);
+                        // Find a good split point (space, period, etc.)
+                        let splitPoint = midPoint;
+                        for (let i = midPoint; i < Math.min(midPoint + 100, cleanText.length); i++) {
+                            if (/[\s.!?]/.test(cleanText[i])) {
+                                splitPoint = i + 1;
+                                break;
+                            }
+                        }
+                        
+                        const firstHalf = cleanText.substring(0, splitPoint).trim();
+                        const secondHalf = cleanText.substring(splitPoint).trim();
+                        
+                        if (firstHalf && secondHalf) {
+                            const [translation1, translation2] = await Promise.all([
+                                translateChunk(firstHalf, sourceLang, targetLang, true),
+                                translateChunk(secondHalf, sourceLang, targetLang, true)
+                            ]);
+                            return translation1 + ' ' + translation2;
+                        }
+                    }
+                    
+                    return cleanText;
+                } else if (response.status === 429) {
+                    console.log('Rate limited (429) - too many requests');
+                    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+                    return cleanText;
+                } else if (response.status === 503) {
+                    console.log('Service unavailable (503)');
+                    return cleanText;
+                } else {
+                    console.log('HTTP error:', response.status);
+                    return cleanText;
+                }
+            }
+            
             const result = await response.json();
             
             if (result && result[0] && result[0][0] && result[0][0][0]) {
                 return result[0][0][0];
             }
             
-            return cleanText; // Return original if translation fails
+            console.log('Unexpected response structure');
+            return cleanText;
         } catch (error) {
-            console.log('Translation error:', error);
+            console.log('Translation error:', error.message);
+            // Handle network errors, JSON parsing errors, etc.
             return cleanText;
         }
+    }
+    
+    // Helper function to split text into chunks at sentence boundaries when possible
+    function splitTextIntoChunks(text, maxSize) {
+        if (text.length <= maxSize) {
+            return [text];
+        }
+        
+        const chunks = [];
+        let currentChunk = '';
+        
+        // Split by sentences first (periods, exclamation marks, question marks)
+        const sentences = text.split(/([.!?]+\s+)/);
+        
+        for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i];
+            
+            // If adding this sentence would exceed the limit
+            if (currentChunk.length + sentence.length > maxSize) {
+                if (currentChunk.length > 0) {
+                    chunks.push(currentChunk.trim());
+                    currentChunk = '';
+                }
+                
+                // If individual sentence is too long, split by words
+                if (sentence.length > maxSize) {
+                    const words = sentence.split(' ');
+                    let wordChunk = '';
+                    
+                    for (const word of words) {
+                        if (wordChunk.length + word.length + 1 > maxSize) {
+                            if (wordChunk.length > 0) {
+                                chunks.push(wordChunk.trim());
+                                wordChunk = '';
+                            }
+                            
+                            // If individual word is still too long, force split
+                            if (word.length > maxSize) {
+                                for (let j = 0; j < word.length; j += maxSize) {
+                                    chunks.push(word.substring(j, j + maxSize));
+                                }
+                            } else {
+                                wordChunk = word;
+                            }
+                        } else {
+                            wordChunk += (wordChunk ? ' ' : '') + word;
+                        }
+                    }
+                    
+                    if (wordChunk.length > 0) {
+                        currentChunk = wordChunk;
+                    }
+                } else {
+                    currentChunk = sentence;
+                }
+            } else {
+                currentChunk += sentence;
+            }
+        }
+        
+        if (currentChunk.length > 0) {
+            chunks.push(currentChunk.trim());
+        }
+        
+        return chunks.filter(chunk => chunk.length > 0);
     }
 
     // Helper function to identify if an element is a paragraph or block element
