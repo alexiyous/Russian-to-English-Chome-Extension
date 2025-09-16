@@ -5,12 +5,43 @@
     let isTranslationActive = false;
     let translationEnabled = true;
     
-    // Simple set to track which elements have been translated
-    // We just need this to avoid re-translating the same elements
-    const translatedElements = new WeakSet();
+    // Map to track which elements have been translated with their content hash
+    // This helps us detect when elements are re-inserted with original content
+    const translatedElements = new WeakMap();
     
     // Observer for detecting new content
     let contentObserver = null;
+    
+    // Debouncing variables for dynamic content
+    let dynamicContentTimeout = null;
+    let pendingNodes = new Set();
+    
+    // Simple hash function for content tracking
+    function simpleHash(text) {
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            const char = text.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash;
+    }
+    
+    // Check if an element needs retranslation
+    function needsRetranslation(element) {
+        const currentText = element.textContent || '';
+        
+        // Check if text contains Russian - if yes, translate it
+        const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+        return russianPattern.test(currentText);
+    }
+    
+    // Mark element as translated with current content hash
+    function markAsTranslated(element) {
+        const currentText = element.textContent || '';
+        const currentHash = simpleHash(currentText.trim());
+        translatedElements.set(element, currentHash);
+    }
 
     // Check if we should translate this page
     async function shouldTranslatePage() {
@@ -67,8 +98,8 @@
     
     // Helper to get all text from an element (not just immediate text nodes)
     function getAllTextContent(element) {
-        // Skip already translated elements
-        if (translatedElements.has(element)) return '';
+        // Skip elements that don't need retranslation
+        if (!needsRetranslation(element)) return '';
         
         // Get all text nodes within this element
         const textContent = [];
@@ -108,9 +139,6 @@
         // Show translation indicator
         showTranslationIndicator();
         
-        // Set up content observer for dynamic content
-        setupContentObserver();
-        
         // First, find block elements with Russian text to translate as complete units
         const paragraphElements = [];
         const blockWalker = document.createTreeWalker(
@@ -124,8 +152,8 @@
                         return NodeFilter.FILTER_REJECT;
                     }
                     
-                    // Skip if already translated
-                    if (translatedElements.has(element)) {
+                    // Skip if doesn't need retranslation
+                    if (!needsRetranslation(element)) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     
@@ -178,8 +206,8 @@
                         return NodeFilter.FILTER_REJECT;
                     }
                     
-                    // Skip if already translated
-                    if (translatedElements.has(parent)) {
+                    // Skip if parent doesn't need retranslation
+                    if (!needsRetranslation(parent)) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     
@@ -260,9 +288,9 @@
                 const originalText = node.textContent.trim();
                 const translatedText = translations[index];
                 if (translatedText && translatedText !== originalText) {
-                    // Mark the element as translated and update text directly
-                    translatedElements.add(node.parentElement);
+                    // Update text and mark the element as translated
                     node.textContent = translatedText;
+                    markAsTranslated(node.parentElement);
                 }
             });
             
@@ -279,6 +307,12 @@
         updateTranslationIndicator(`Translated ${paragraphElements.length} paragraphs and ${textNodes.length} text elements`);
         
         isTranslationActive = false;
+        
+        // Set up a periodic check for late-loading content (especially for SPAs)
+        setTimeout(() => {
+            checkForLateLoadingContent();
+        }, 5000);
+        
         setTimeout(() => {
             hideTranslationIndicator();
         }, 3000);
@@ -289,49 +323,51 @@
 
     // Function to translate an entire element's content
     async function translateElementContent(element) {
-        // Get all direct text nodes that need translation
-        const directTextNodes = [];
-        for (let i = 0; i < element.childNodes.length; i++) {
-            const child = element.childNodes[i];
-            if (child.nodeType === Node.TEXT_NODE) {
-                const text = child.textContent.trim();
-                if (text.length > 0) {
+        console.log("translateElementContent called for:", element.tagName, element.textContent.substring(0, 100));
+        
+        // Get ALL text nodes within this element (not just direct children)
+        const allTextNodes = [];
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode: function(textNode) {
+                    const text = textNode.textContent.trim();
+                    if (text.length < 2) return NodeFilter.FILTER_REJECT;
+                    
                     // Check for Russian text
                     const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
-                    if (russianPattern.test(text)) {
-                        directTextNodes.push(child);
-                    }
+                    return russianPattern.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
                 }
             }
+        );
+        
+        let textNode;
+        while (textNode = walker.nextNode()) {
+            allTextNodes.push(textNode);
         }
         
-        // If there are direct text nodes, translate them first
-        if (directTextNodes.length > 0) {
+        console.log(`Found ${allTextNodes.length} Russian text nodes in element`);
+        
+        // If there are text nodes with Russian text, translate them
+        if (allTextNodes.length > 0) {
             const translations = await Promise.all(
-                directTextNodes.map(node => translateText(node.textContent.trim()))
+                allTextNodes.map(node => translateText(node.textContent.trim()))
             );
             
-            directTextNodes.forEach((node, index) => {
+            allTextNodes.forEach((node, index) => {
                 const originalText = node.textContent.trim();
                 const translatedText = translations[index];
                 if (translatedText && translatedText !== originalText) {
-                    // Update the text
-                    node.textContent = node.textContent.replace(originalText, translatedText);
+                    // Update the text directly
+                    console.log("Updating text node:", originalText, "->", translatedText);
+                    node.textContent = translatedText;
                 }
             });
         }
         
-        // Now find and translate non-block child elements
-        const childElements = Array.from(element.children).filter(child => 
-            !isBlockElement(child) && !translatedElements.has(child)
-        );
-        
-        for (const childElement of childElements) {
-            await translateElementContent(childElement);
-        }
-        
         // Mark as translated
-        translatedElements.add(element);
+        markAsTranslated(element);
         return true;
     }
 
@@ -342,82 +378,53 @@
         }
         
         contentObserver = new MutationObserver((mutations) => {
-            const nodesToTranslate = [];
+            const nodesToProcess = new Set();
             
             mutations.forEach((mutation) => {
                 if (mutation.type === 'childList') {
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType === Node.TEXT_NODE) {
-                            nodesToTranslate.push(node);
+                            // Check if text node contains Russian text
+                            const text = node.textContent.trim();
+                            if (text.length >= 2) {
+                                const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+                                if (russianPattern.test(text)) {
+                                    console.log("MutationObserver: Found Russian text node:", text.substring(0, 50));
+                                    nodesToProcess.add(node);
+                                }
+                            }
                         } else if (node.nodeType === Node.ELEMENT_NODE) {
-                            // First check if this is a paragraph/block element with Russian text
-                            if (isBlockElement(node) && containsRussianText(node)) {
-                                // Process entire paragraph at once
-                                translateElementContent(node).then(() => {
-                                    console.log("Translated dynamically added paragraph");
-                                });
-                            } else {
-                                // Find all text nodes in the added element that aren't in paragraphs we're already handling
-                                const walker = document.createTreeWalker(
-                                    node,
-                                    NodeFilter.SHOW_TEXT,
-                                    {
-                                        acceptNode: function(textNode) {
-                                            const parent = textNode.parentElement;
-                                            if (!parent) return NodeFilter.FILTER_REJECT;
-                                            
-                                            const tagName = parent.tagName.toLowerCase();
-                                            if (['script', 'style', 'noscript', 'meta', 'head'].includes(tagName)) {
-                                                return NodeFilter.FILTER_REJECT;
-                                            }
-                                            
-                                            if (translatedElements.has(parent)) {
-                                                return NodeFilter.FILTER_REJECT;
-                                            }
-                                            
-                                            // Skip if inside a block element we're already handling
-                                            let currentParent = parent;
-                                            while (currentParent && currentParent !== node) {
-                                                if (isBlockElement(currentParent) && containsRussianText(currentParent)) {
-                                                    return NodeFilter.FILTER_REJECT;
-                                                }
-                                                currentParent = currentParent.parentElement;
-                                            }
-                                            
-                                            const text = textNode.textContent.trim();
-                                            if (text.length < 2) return NodeFilter.FILTER_REJECT;
-                                            
-                                            // Enhanced pattern for Cyrillic detection
-                                            const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
-                                            return russianPattern.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-                                        }
-                                    }
-                                );
-                                
-                                let textNode;
-                                while (textNode = walker.nextNode()) {
-                                    nodesToTranslate.push(textNode);
+                            // Check if element or its children contain Russian text
+                            const textContent = node.textContent || '';
+                            if (textContent.trim().length >= 2) {
+                                const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+                                if (russianPattern.test(textContent)) {
+                                    console.log("MutationObserver: Found Russian element:", node.tagName, textContent.substring(0, 50));
+                                    // Add the entire element for processing
+                                    nodesToProcess.add(node);
                                 }
                             }
                         }
                     });
                 } else if (mutation.type === 'characterData') {
-                    // For any text content changes, check if we need to translate
-                    const parent = mutation.target.parentElement;
-                    if (!parent || translatedElements.has(parent)) {
-                        // If already marked as translated, skip it
-                        // We don't restore translations since we're not storing them
-                        return;
-                    } else {
-                        // New text content, check if it needs translation
-                        nodesToTranslate.push(mutation.target);
+                    // Handle text content changes
+                    const text = mutation.target.textContent.trim();
+                    if (text.length >= 2) {
+                        const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+                        if (russianPattern.test(text)) {
+                            console.log("MutationObserver: Found Russian text change:", text.substring(0, 50));
+                            nodesToProcess.add(mutation.target);
+                        }
                     }
                 }
             });
             
-            // Translate new nodes
-            if (nodesToTranslate.length > 0) {
-                translateNewNodes(nodesToTranslate);
+            // Add nodes to pending set and debounce processing
+            nodesToProcess.forEach(node => pendingNodes.add(node));
+            
+            if (nodesToProcess.size > 0) {
+                console.log(`MutationObserver: Scheduling ${nodesToProcess.size} nodes for translation`);
+                debouncedTranslateDynamicContent();
             }
         });
         
@@ -426,6 +433,106 @@
             subtree: true,
             characterData: true
         });
+    }
+    
+    // Debounced function to handle dynamic content translation
+    function debouncedTranslateDynamicContent() {
+        if (dynamicContentTimeout) {
+            clearTimeout(dynamicContentTimeout);
+        }
+        
+        dynamicContentTimeout = setTimeout(async () => {
+            if (pendingNodes.size === 0) {
+                console.log("No pending nodes to process");
+                return;
+            }
+            
+            if (isTranslationActive) {
+                console.log("Translation already active, postponing dynamic content");
+                // Reschedule if main translation is active
+                debouncedTranslateDynamicContent();
+                return;
+            }
+            
+            console.log(`Processing ${pendingNodes.size} dynamically added nodes`);
+            
+            const nodesToTranslate = Array.from(pendingNodes);
+            pendingNodes.clear();
+            
+            // Separate elements and text nodes for better processing
+            const elements = [];
+            const textNodes = [];
+            
+            nodesToTranslate.forEach(node => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    elements.push(node);
+                } else if (node.nodeType === Node.TEXT_NODE) {
+                    textNodes.push(node);
+                }
+            });
+            
+            // Process elements first (they might contain the text nodes)
+            for (const element of elements) {
+                try {
+                    if (needsRetranslation(element)) {
+                        console.log("Translating dynamic element:", element.tagName, element.textContent.substring(0, 100));
+                        if (isBlockElement(element) && containsRussianText(element)) {
+                            await translateElementContent(element);
+                            console.log("Translated block element");
+                        } else {
+                            // Find and translate text nodes within this element
+                            const walker = document.createTreeWalker(
+                                element,
+                                NodeFilter.SHOW_TEXT,
+                                {
+                                    acceptNode: function(textNode) {
+                                        const parent = textNode.parentElement;
+                                        if (!parent || !needsRetranslation(parent)) {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        
+                                        const tagName = parent.tagName.toLowerCase();
+                                        if (['script', 'style', 'noscript', 'meta', 'head'].includes(tagName)) {
+                                            return NodeFilter.FILTER_REJECT;
+                                        }
+                                        
+                                        const text = textNode.textContent.trim();
+                                        if (text.length < 2) return NodeFilter.FILTER_REJECT;
+                                        
+                                        const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+                                        return russianPattern.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                                    }
+                                }
+                            );
+                            
+                            const foundTextNodes = [];
+                            let textNode;
+                            while (textNode = walker.nextNode()) {
+                                foundTextNodes.push(textNode);
+                            }
+                            
+                            if (foundTextNodes.length > 0) {
+                                await translateNewNodes(foundTextNodes);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log("Error processing dynamic element:", error);
+                }
+            }
+            
+            // Process remaining text nodes that weren't part of elements
+            const remainingTextNodes = textNodes.filter(node => {
+                const parent = node.parentElement;
+                return parent && needsRetranslation(parent) && !elements.some(el => el.contains(node));
+            });
+            
+            if (remainingTextNodes.length > 0) {
+                await translateNewNodes(remainingTextNodes);
+            }
+            
+            console.log("Dynamic content translation completed");
+        }, 500); // 500ms debounce delay
     }
 
 
@@ -437,8 +544,8 @@
         const parent = node.parentElement;
         if (!parent) return false;
         
-        // Skip if already translated
-        if (translatedElements.has(parent)) return false;
+        // Skip if doesn't need retranslation
+        if (!needsRetranslation(parent)) return false;
         
         const originalText = node.textContent.trim();
         if (originalText.length < 2) return false; // Skip very short text
@@ -470,7 +577,7 @@
                 const translatedText = await translateText(originalText);
                 if (translatedText && translatedText !== originalText) {
                     node.textContent = node.textContent.replace(originalText, translatedText);
-                    translatedElements.add(parent);
+                    markAsTranslated(parent);
                     return true;
                 }
             }
@@ -664,6 +771,9 @@
 
             console.log('Auto Translator: Russian text detected, starting direct translation...');
             
+            // Set up content observer immediately to catch dynamic content
+            setupContentObserver();
+            
             // Start direct translation after a short delay
             setTimeout(() => {
                 autoTranslateToEnglish();
@@ -677,6 +787,18 @@
     // Handle page refreshes and navigation
     function handlePageChange() {
         isTranslationActive = false;
+        
+        // Clear any pending dynamic content
+        if (dynamicContentTimeout) {
+            clearTimeout(dynamicContentTimeout);
+        }
+        pendingNodes.clear();
+        
+        // Disconnect existing observer
+        if (contentObserver) {
+            contentObserver.disconnect();
+            contentObserver = null;
+        }
         
         // Wait for page to load completely
         if (document.readyState === 'loading') {
@@ -729,6 +851,50 @@
         }, 300); // 300ms throttle
     }
 
+    // Check for late-loading content that may have appeared after initial translation
+    function checkForLateLoadingContent() {
+        console.log("Checking for late-loading content...");
+        
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            {
+                acceptNode: function(node) {
+                    const parent = node.parentElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    
+                    const tagName = parent.tagName.toLowerCase();
+                    if (['script', 'style', 'noscript', 'meta', 'head'].includes(tagName)) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    
+                    // Skip if doesn't need retranslation
+                    if (!needsRetranslation(parent)) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    
+                    const text = node.textContent.trim();
+                    if (text.length < 2) return NodeFilter.FILTER_REJECT;
+                    
+                    // Enhanced pattern for Cyrillic detection
+                    const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
+                    return russianPattern.test(text) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                }
+            }
+        );
+        
+        const lateNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            lateNodes.push(node);
+        }
+        
+        if (lateNodes.length > 0) {
+            console.log(`Found ${lateNodes.length} late-loading nodes with Russian text`);
+            translateNewNodes(lateNodes);
+        }
+    }
+
     // Check for untranslated Russian text in current viewport
     function checkForUntranslatedText() {
         const walker = document.createTreeWalker(
@@ -744,8 +910,8 @@
                         return NodeFilter.FILTER_REJECT;
                     }
                     
-                    // Skip if already translated
-                    if (translatedElements.has(parent)) {
+                    // Skip if doesn't need retranslation
+                    if (!needsRetranslation(parent)) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     
@@ -801,6 +967,11 @@
         if (scrollTimeout) {
             clearTimeout(scrollTimeout);
         }
+        if (dynamicContentTimeout) {
+            clearTimeout(dynamicContentTimeout);
+        }
+        pendingNodes.clear();
+        // Note: WeakMap doesn't have a clear() method, but it will be garbage collected
         window.removeEventListener('scroll', handleScroll);
         window.removeEventListener('resize', handleScroll);
     }
