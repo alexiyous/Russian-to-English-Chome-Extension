@@ -160,7 +160,7 @@
             paragraphElements.push(blockElement);
         }
         
-        console.log(`Found ${paragraphElements.length} paragraph/block elements to translate`);
+
         
         // Now find individual text nodes that aren't part of the selected paragraphs
         const textNodes = [];
@@ -204,9 +204,7 @@
             textNodes.push(node);
         }
         
-        console.log(`Found ${paragraphElements.length} paragraph elements and ${textNodes.length} individual text nodes to translate`);
-        
-        console.log(`Translating paragraph elements...`);
+
         const paragraphBatchSize = 5;
         
         for (let i = 0; i < paragraphElements.length; i += paragraphBatchSize) {
@@ -221,7 +219,7 @@
             }
         }
         
-        console.log(`Translating individual text nodes...`);
+
         
         const smallNodes = [];
         const regularNodes = [];
@@ -270,12 +268,11 @@
         setTimeout(() => {
             hideTranslationIndicator();
         }, 3000);
-        console.log('Translation complete');
+
     }
 
     // Function to translate an entire element's content
     async function translateElementContent(element) {
-        console.log("translateElementContent called for:", element.tagName, element.textContent.substring(0, 100));
         
         const allTextNodes = [];
         const walker = document.createTreeWalker(
@@ -297,7 +294,7 @@
             allTextNodes.push(textNode);
         }
         
-        console.log(`Found ${allTextNodes.length} Russian text nodes in element`);
+
         
         if (allTextNodes.length > 0) {
             const translations = await Promise.all(
@@ -308,7 +305,6 @@
                 const originalText = node.textContent.trim();
                 const translatedText = translations[index];
                 if (translatedText && translatedText !== originalText) {
-                    console.log("Updating text node:", originalText, "->", translatedText);
                     node.textContent = translatedText;
                 }
             });
@@ -335,7 +331,6 @@
                             if (text.length >= 2) {
                                 const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
                                 if (russianPattern.test(text)) {
-                                    console.log("MutationObserver: Found Russian text node:", text.substring(0, 50));
                                     nodesToProcess.add(node);
                                 }
                             }
@@ -344,7 +339,6 @@
                             if (textContent.trim().length >= 2) {
                                 const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
                                 if (russianPattern.test(textContent)) {
-                                    console.log("MutationObserver: Found Russian element:", node.tagName, textContent.substring(0, 50));
                                     nodesToProcess.add(node);
                                 }
                             }
@@ -355,7 +349,6 @@
                     if (text.length >= 2) {
                         const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
                         if (russianPattern.test(text)) {
-                            console.log("MutationObserver: Found Russian text change:", text.substring(0, 50));
                             nodesToProcess.add(mutation.target);
                         }
                     }
@@ -366,7 +359,6 @@
             nodesToProcess.forEach(node => pendingNodes.add(node));
             
             if (nodesToProcess.size > 0) {
-                console.log(`MutationObserver: Scheduling ${nodesToProcess.size} nodes for translation`);
                 debouncedTranslateDynamicContent();
             }
         });
@@ -386,17 +378,13 @@
         
         dynamicContentTimeout = setTimeout(async () => {
             if (pendingNodes.size === 0) {
-                console.log("No pending nodes to process");
                 return;
             }
             
             if (isTranslationActive) {
-                console.log("Translation already active, postponing dynamic content");
                 debouncedTranslateDynamicContent();
                 return;
             }
-            
-            console.log(`Processing ${pendingNodes.size} dynamically added nodes`);
             
             const nodesToTranslate = Array.from(pendingNodes);
             pendingNodes.clear();
@@ -416,10 +404,8 @@
             for (const element of elements) {
                 try {
                     if (needsRetranslation(element)) {
-                        console.log("Translating dynamic element:", element.tagName, element.textContent.substring(0, 100));
                         if (isBlockElement(element) && containsRussianText(element)) {
                             await translateElementContent(element);
-                            console.log("Translated block element");
                         } else {
                             const walker = document.createTreeWalker(
                                 element,
@@ -470,7 +456,7 @@
                 await translateNewNodes(remainingTextNodes);
             }
             
-            console.log("Dynamic content translation completed");
+
         }, 500);
     }
 
@@ -549,7 +535,6 @@
     
     // Verification function to check for untranslated Russian text
     async function verifyTranslations() {
-        console.log("Verifying translations for completeness...");
         updateTranslationIndicator("Verifying translations...");
         
         // Look for elements that still contain Russian text
@@ -563,7 +548,6 @@
         });
         
         if (incompleteElements.length > 0) {
-            console.log(`Found ${incompleteElements.length} elements with incomplete translations. Attempting fix...`);
             updateTranslationIndicator(`Fixing ${incompleteElements.length} incomplete translations...`);
             
             // Try to fix these elements with larger batches
@@ -620,9 +604,6 @@
                 }
             }
             
-            console.log("Incomplete translations fix attempt completed");
-        } else {
-            console.log("All translations are complete");
         }
     }
 
@@ -680,7 +661,7 @@
             return;
         }
 
-        console.log('Auto Translator: Starting direct translation...');
+
         await translatePageContent();
     }
 
@@ -694,7 +675,7 @@
                 return;
             }
 
-            console.log('Auto Translator: Russian text detected, starting direct translation...');
+
             
             // Set up content observer immediately to catch dynamic content
             setupContentObserver();
@@ -778,7 +759,6 @@
 
     // Check for late-loading content that may have appeared after initial translation
     function checkForLateLoadingContent() {
-        console.log("Checking for late-loading content...");
         
         const walker = document.createTreeWalker(
             document.body,
@@ -815,7 +795,6 @@
         }
         
         if (lateNodes.length > 0) {
-            console.log(`Found ${lateNodes.length} late-loading nodes with Russian text`);
             translateNewNodes(lateNodes);
         }
     }
@@ -863,7 +842,6 @@
         }
         
         if (nodesToTranslate.length > 0) {
-            console.log(`Found ${nodesToTranslate.length} untranslated nodes in viewport`);
             translateNewNodes(nodesToTranslate);
         }
     }
