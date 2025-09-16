@@ -90,7 +90,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 target: { tabId: tabs[0].id },
                 func: () => {
                     const textContent = document.body.textContent || document.body.innerText || '';
-                    const russianPattern = /[\u0400-\u04FF]/;
+                    // Enhanced pattern for Cyrillic detection including extended characters
+                    const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
                     return russianPattern.test(textContent);
                 }
             }, function(result) {
