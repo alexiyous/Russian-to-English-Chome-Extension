@@ -5,27 +5,12 @@
     let isTranslationActive = false;
     let translationEnabled = true;
     
-    // Map to track which elements have been translated with their content hash
-    // This helps us detect when elements are re-inserted with original content
-    const translatedElements = new WeakMap();
-    
     // Observer for detecting new content
     let contentObserver = null;
     
     // Debouncing variables for dynamic content
     let dynamicContentTimeout = null;
     let pendingNodes = new Set();
-    
-    // Simple hash function for content tracking
-    function simpleHash(text) {
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-            const char = text.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32-bit integer
-        }
-        return hash;
-    }
     
     // Check if an element needs retranslation
     function needsRetranslation(element) {
@@ -34,13 +19,6 @@
         // Check if text contains Russian - if yes, translate it
         const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
         return russianPattern.test(currentText);
-    }
-    
-    // Mark element as translated with current content hash
-    function markAsTranslated(element) {
-        const currentText = element.textContent || '';
-        const currentHash = simpleHash(currentText.trim());
-        translatedElements.set(element, currentHash);
     }
 
     // Check if we should translate this page
@@ -288,9 +266,8 @@
                 const originalText = node.textContent.trim();
                 const translatedText = translations[index];
                 if (translatedText && translatedText !== originalText) {
-                    // Update text and mark the element as translated
+                    // Update text
                     node.textContent = translatedText;
-                    markAsTranslated(node.parentElement);
                 }
             });
             
@@ -366,8 +343,6 @@
             });
         }
         
-        // Mark as translated
-        markAsTranslated(element);
         return true;
     }
 
@@ -577,7 +552,6 @@
                 const translatedText = await translateText(originalText);
                 if (translatedText && translatedText !== originalText) {
                     node.textContent = node.textContent.replace(originalText, translatedText);
-                    markAsTranslated(parent);
                     return true;
                 }
             }
@@ -608,33 +582,20 @@
             }
         }
     }
-
-    // Function to check for untranslated Russian text in viewport
-    // We only need this one function since we no longer restore translations
-    function checkViewportForNewText() {
-        checkForUntranslatedText();
-    }
     
     // Verification function to check for untranslated Russian text
     async function verifyTranslations() {
         console.log("Verifying translations for completeness...");
         updateTranslationIndicator("Verifying translations...");
         
-        // Check all elements that we've marked as translated
-        const elementsToCheck = [];
-        document.querySelectorAll('*').forEach(element => {
-            if (translatedElements.has(element)) {
-                elementsToCheck.push(element);
-            }
-        });
-        
         // Look for elements that still contain Russian text
-        const incompleteElements = elementsToCheck.filter(element => {
-            // Get all text content
+        const incompleteElements = [];
+        document.querySelectorAll('*').forEach(element => {
             const text = element.textContent || '';
-            // Check if it still contains any Russian text
             const russianPattern = /[\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]/;
-            return russianPattern.test(text);
+            if (russianPattern.test(text)) {
+                incompleteElements.push(element);
+            }
         });
         
         if (incompleteElements.length > 0) {
@@ -971,7 +932,6 @@
             clearTimeout(dynamicContentTimeout);
         }
         pendingNodes.clear();
-        // Note: WeakMap doesn't have a clear() method, but it will be garbage collected
         window.removeEventListener('scroll', handleScroll);
         window.removeEventListener('resize', handleScroll);
     }
